@@ -20,7 +20,7 @@ MCU = attiny85
 TARGET = servo
 
 # List C sourcVe files here. (C dependencies are automatically generated.)
-SRC = $(TARGET).c
+SRC = $(TARGET).c i2c/i2c_machine.c
 
 # Programming hardware: type avrdude -c ?
 # to get a full listing.

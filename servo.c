@@ -1,8 +1,12 @@
 #define F_CPU 8000000
 
-#include <avr/io.h>
-#include <util/delay.h>
 #include <avr/interrupt.h>
+#include <avr/io.h>
+#include <avr/sleep.h>
+#include <util/delay.h>
+
+#include "i2c/i2c_slave_defs.h"
+#include "i2c/i2c_machine.h"
 
 // Theory of operation:
 //  Set up timer0 to overflow every ~20ms
@@ -15,6 +19,21 @@
 #define SERVO_DDR   DDRB
 #define SERVO_PIN_A (1 << 3)
 #define SERVO_PIN_B (1 << 4)
+
+// No idea why...
+#define SERVO_MIN 2
+
+volatile uint8_t i2c_reg[I2C_N_REG] = {
+	0x0,        // CONTROL
+	0x80,       // SERVO_A
+	SERVO_MIN,  // SERVO_A_MIN
+	0xFF,       // SERVO_A_MAX
+	0x80,       // SERVO_B
+	SERVO_MIN, // SERVO_B_MIN
+	0xFF,       // SERVO_B_MAX
+};
+
+const uint8_t i2c_w_mask[I2C_N_REG] = { 0x3, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
 enum servo_id {
 	SERVO_A = 0,
@@ -57,12 +76,23 @@ ISR(TIMER1_COMPB_vect) {
 }
 
 void servo_set(enum servo_id servo, uint8_t pos) {
+	uint8_t min, max;
+	uint16_t tmp;
+
 	switch (servo) {
 	case SERVO_A:
-		OCR1A = pos;
+		min = REG_SERVO_A_MIN;
+		max = REG_SERVO_A_MAX;
+		tmp = (max - min) * pos;
+
+		OCR1A = (tmp >> 8) + min;
 		break;
 	case SERVO_B:
-		OCR1B = pos;
+		min = REG_SERVO_B_MIN;
+		max = REG_SERVO_B_MAX;
+		tmp = (max - min) * pos;
+
+		OCR1B = (tmp >> 8) + min;
 		break;
 	}
 }
@@ -99,7 +129,7 @@ static void servo_disable(enum servo_id servo) {
 	sei();
 }
 
-void main()
+void main(void)
 {
 	DDRB |= (1 << 3);
 
@@ -117,14 +147,56 @@ void main()
 
 	GTCCR = 0;
 
+	i2c_init();
+
 	sei();
 
-	servo_set(SERVO_A, 128);
+	servo_set(SERVO_A, REG_SERVO_A);
+	servo_set(SERVO_B, REG_SERVO_B);
 	servo_enable(SERVO_A);
+
+	uint8_t ctl = REG_CONTROL;
 	for (;;) {
-		servo_set(SERVO_A, 50);
-		_delay_ms(1000);
-		servo_set(SERVO_A, 200);
-		_delay_ms(1000);
+		if (i2c_check_stop()) {
+			if (REG_SERVO_A_MIN < SERVO_MIN) {
+				REG_SERVO_A_MIN = SERVO_MIN;
+			}
+
+			if (REG_SERVO_B_MIN < SERVO_MIN) {
+				REG_SERVO_B_MIN = SERVO_MIN;
+			}
+
+			if (REG_SERVO_A_MAX < REG_SERVO_A_MIN) {
+				REG_SERVO_A_MAX = REG_SERVO_A_MIN;
+			}
+
+			if (REG_SERVO_B_MAX < REG_SERVO_B_MIN) {
+				REG_SERVO_B_MAX = REG_SERVO_B_MIN;
+			}
+
+			if (REG_CONTROL & (1 << SERVO_A)) {
+				servo_set(SERVO_A, REG_SERVO_A);
+				if (!(ctl & (1 << SERVO_A))) {
+					servo_enable(SERVO_A);
+				}
+			} else {
+				if (ctl & (1 << SERVO_A)) {
+					servo_disable(SERVO_A);
+				}
+			}
+
+			if (REG_CONTROL & (1 << SERVO_B)) {
+				servo_set(SERVO_B, REG_SERVO_B);
+				if (!(ctl & (1 << SERVO_B))) {
+					servo_enable(SERVO_B);
+				}
+			} else {
+				if (ctl & (1 << SERVO_B)) {
+					servo_disable(SERVO_B);
+				}
+			}
+			ctl = REG_CONTROL;
+		}
+		sleep_mode();
 	};
 }
