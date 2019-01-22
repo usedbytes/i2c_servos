@@ -1,5 +1,6 @@
 #define F_CPU 8000000
 
+#include <avr/eeprom.h>
 #include <avr/interrupt.h>
 #include <avr/io.h>
 #include <avr/sleep.h>
@@ -32,8 +33,9 @@ volatile uint8_t i2c_reg[I2C_N_REG] = {
 	SERVO_MIN, // SERVO_B_MIN
 	0xFF,       // SERVO_B_MAX
 };
+const uint8_t eeprom[] EEMEM = { 0x0, 0x80, SERVO_MIN, 0xFF, 0x80, SERVO_MIN, 0xFF };
 
-const uint8_t i2c_w_mask[I2C_N_REG] = { 0x3, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+const uint8_t i2c_w_mask[I2C_N_REG] = { 0x83, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
 enum servo_id {
 	SERVO_A = 0,
@@ -129,9 +131,22 @@ static void servo_disable(enum servo_id servo) {
 	sei();
 }
 
+static void save_to_eeprom() {
+	eeprom_write_block(i2c_reg, (void *)eeprom, I2C_N_REG);
+}
+
+static void load_from_eeprom() {
+	uint8_t i;
+
+	eeprom_read_block(i2c_reg, (void *)eeprom, I2C_N_REG);
+	for (i = 0; i < I2C_N_REG; i++) {
+		i2c_reg[i] = i2c_reg[i] & i2c_w_mask[i];
+	}
+}
+
 void main(void)
 {
-	DDRB |= (1 << 3);
+	DDRB |= SERVO_PIN_A | SERVO_PIN_B;
 
 	GTCCR = (1 << TSM) | (1 << PSR0);
 	// CTC mode - overflow at OCR0A
@@ -147,13 +162,19 @@ void main(void)
 
 	GTCCR = 0;
 
+	load_from_eeprom();
 	i2c_init();
 
 	sei();
 
-	servo_set(SERVO_A, REG_SERVO_A);
-	servo_set(SERVO_B, REG_SERVO_B);
-	servo_enable(SERVO_A);
+	if (REG_CONTROL & (1 << SERVO_A)) {
+		servo_set(SERVO_A, REG_SERVO_A);
+		servo_enable(SERVO_A);
+	}
+	if (REG_CONTROL & (1 << SERVO_B)) {
+		servo_set(SERVO_B, REG_SERVO_B);
+		servo_enable(SERVO_B);
+	}
 
 	uint8_t ctl = REG_CONTROL;
 	for (;;) {
@@ -196,6 +217,11 @@ void main(void)
 				}
 			}
 			ctl = REG_CONTROL;
+
+			if (ctl & 1 << 7) {
+				REG_CONTROL &= ~(1 << 7);
+				save_to_eeprom();
+			}
 		}
 		sleep_mode();
 	};
