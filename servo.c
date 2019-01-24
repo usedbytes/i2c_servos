@@ -34,6 +34,7 @@ volatile uint8_t i2c_reg[I2C_N_REG] = {
 	0xFF,       // SERVO_B_MAX
 };
 const uint8_t eeprom[] EEMEM = { 0x0, 0x80, SERVO_MIN, 0xFF, 0x80, SERVO_MIN, 0xFF };
+// [3, 0, 128, 160, 0, 128, 96]
 
 const uint8_t i2c_w_mask[I2C_N_REG] = { 0x83, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
@@ -77,24 +78,23 @@ ISR(TIMER1_COMPB_vect) {
 	servo_done(SERVO_PIN_B);
 }
 
+static uint8_t calc_pos(uint8_t start, uint8_t end, uint8_t pos) {
+	int16_t range = end - start;
+	int16_t offs = (int32_t)(range * pos) >> 8;
+
+	return start + offs;
+}
+
 void servo_set(enum servo_id servo, uint8_t pos) {
-	uint8_t min, max;
-	uint16_t tmp;
 
 	switch (servo) {
 	case SERVO_A:
-		min = REG_SERVO_A_MIN;
-		max = REG_SERVO_A_MAX;
-		tmp = (max - min) * pos;
-
-		OCR1A = (tmp >> 8) + min;
+		pos = calc_pos(REG_SERVO_A_MIN, REG_SERVO_A_MAX, pos);
+		OCR1A = pos;
 		break;
 	case SERVO_B:
-		min = REG_SERVO_B_MIN;
-		max = REG_SERVO_B_MAX;
-		tmp = (max - min) * pos;
-
-		OCR1B = (tmp >> 8) + min;
+		pos = calc_pos(REG_SERVO_B_MIN, REG_SERVO_B_MAX, pos);
+		OCR1B = pos;
 		break;
 	}
 }
@@ -131,14 +131,14 @@ static void servo_disable(enum servo_id servo) {
 	sei();
 }
 
-static void save_to_eeprom() {
-	eeprom_write_block(i2c_reg, (void *)eeprom, I2C_N_REG);
+static void save_to_eeprom(void) {
+	eeprom_write_block((const void *)i2c_reg, (void *)eeprom, I2C_N_REG);
 }
 
-static void load_from_eeprom() {
+static void load_from_eeprom(void) {
 	uint8_t i;
 
-	eeprom_read_block(i2c_reg, (void *)eeprom, I2C_N_REG);
+	eeprom_read_block((void *)i2c_reg, (void *)eeprom, I2C_N_REG);
 	for (i = 0; i < I2C_N_REG; i++) {
 		i2c_reg[i] = i2c_reg[i] & i2c_w_mask[i];
 	}
@@ -187,12 +187,12 @@ void main(void)
 				REG_SERVO_B_MIN = SERVO_MIN;
 			}
 
-			if (REG_SERVO_A_MAX < REG_SERVO_A_MIN) {
-				REG_SERVO_A_MAX = REG_SERVO_A_MIN;
+			if (REG_SERVO_A_MAX < SERVO_MIN) {
+				REG_SERVO_A_MAX = SERVO_MIN;
 			}
 
-			if (REG_SERVO_B_MAX < REG_SERVO_B_MIN) {
-				REG_SERVO_B_MAX = REG_SERVO_B_MIN;
+			if (REG_SERVO_B_MAX < SERVO_MIN) {
+				REG_SERVO_B_MAX = SERVO_MIN;
 			}
 
 			if (REG_CONTROL & (1 << SERVO_A)) {
