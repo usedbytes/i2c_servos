@@ -39,9 +39,9 @@
 /* Define anything else your application wants to know */
 #define REG_CONTROL        i2c_reg[0]
 #define REG_SERVO_A        i2c_reg[1]
-#define REG_SERVO_A_MIN    i2c_reg[2]
-#define REG_SERVO_A_MAX    i2c_reg[3]
-#define REG_SERVO_B        i2c_reg[4]
+#define REG_SERVO_B        i2c_reg[2]
+#define REG_SERVO_A_MIN    i2c_reg[3]
+#define REG_SERVO_A_MAX    i2c_reg[4]
 #define REG_SERVO_B_MIN    i2c_reg[5]
 #define REG_SERVO_B_MAX    i2c_reg[6]
 

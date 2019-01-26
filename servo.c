@@ -19,7 +19,8 @@
 #define SERVO_PORT  PORTB
 #define SERVO_DDR   DDRB
 #define SERVO_PIN_A (1 << 3)
-#define SERVO_PIN_B (1 << 4)
+#define SERVO_PIN_B (1 << 1)
+#define LASER_PIN (1 << 4)
 
 // No idea why...
 #define SERVO_MIN 2
@@ -27,16 +28,16 @@
 volatile uint8_t i2c_reg[I2C_N_REG] = {
 	0x0,        // CONTROL
 	0x80,       // SERVO_A
+	0x80,       // SERVO_B
 	SERVO_MIN,  // SERVO_A_MIN
 	0xFF,       // SERVO_A_MAX
-	0x80,       // SERVO_B
 	SERVO_MIN, // SERVO_B_MIN
 	0xFF,       // SERVO_B_MAX
 };
-const uint8_t eeprom[] EEMEM = { 0x0, 0x80, SERVO_MIN, 0xFF, 0x80, SERVO_MIN, 0xFF };
-// [3, 0, 128, 160, 0, 128, 96]
+const uint8_t eeprom[] EEMEM = { 0x0, 0x80, 0x80, SERVO_MIN, 0xFF, SERVO_MIN, 0xFF };
+// [3, 0, 0, 128, 75, 128, 180]
 
-const uint8_t i2c_w_mask[I2C_N_REG] = { 0x83, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+const uint8_t i2c_w_mask[I2C_N_REG] = { 0x87, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
 enum servo_id {
 	SERVO_A = 0,
@@ -144,9 +145,19 @@ static void load_from_eeprom(void) {
 	}
 }
 
+static void laser_on(void) {
+	DDRB |= LASER_PIN;
+}
+
+static void laser_off(void) {
+	DDRB &= ~(LASER_PIN);
+}
+
 void main(void)
 {
 	DDRB |= SERVO_PIN_A | SERVO_PIN_B;
+	PORTB &= ~(LASER_PIN);
+	laser_off();
 
 	GTCCR = (1 << TSM) | (1 << PSR0);
 	// CTC mode - overflow at OCR0A
@@ -179,6 +190,8 @@ void main(void)
 	uint8_t ctl = REG_CONTROL;
 	for (;;) {
 		if (i2c_check_stop()) {
+			uint8_t tmp = ctl ^ REG_CONTROL;
+
 			if (REG_SERVO_A_MIN < SERVO_MIN) {
 				REG_SERVO_A_MIN = SERVO_MIN;
 			}
@@ -216,12 +229,22 @@ void main(void)
 					servo_disable(SERVO_B);
 				}
 			}
+
+			if (tmp & (1 << 2)) {
+				if (REG_CONTROL & (1 << 2)) {
+					laser_on();
+				} else {
+					laser_off();
+				}
+			}
+
 			ctl = REG_CONTROL;
 
 			if (ctl & 1 << 7) {
 				REG_CONTROL &= ~(1 << 7);
 				save_to_eeprom();
 			}
+
 		}
 		sleep_mode();
 	};
