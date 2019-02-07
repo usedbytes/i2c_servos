@@ -35,7 +35,7 @@ volatile uint8_t i2c_reg[I2C_N_REG] = {
 	0xFF,       // SERVO_B_MAX
 };
 const uint8_t eeprom[] EEMEM = { 0x0, 0x80, 0x80, SERVO_MIN, 0xFF, SERVO_MIN, 0xFF };
-// [3, 0, 0, 128, 75, 128, 180]
+// 0, 0, 0, 128, 75, 128, 180
 
 const uint8_t i2c_w_mask[I2C_N_REG] = { 0x87, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
