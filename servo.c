@@ -10,10 +10,33 @@
 #include "i2c/i2c_machine.h"
 
 // Theory of operation:
-//  Set up timer0 to overflow every ~20ms
-//  Set up timer0 to generate interrupt after ~0.5ms
-//  In timer0 event interrupt, trigger timer1
-//  Timer1 set up with 128 prescaler
+//  - Set up timer0 to overflow every N milliseconds (whatever servo period you
+//    want), and to trigger compare-match after 0.5ms
+//  - When timer0 overflows, set the servo pins high
+//  - When the timer0 compare match triggers:
+//    - Set up timer1 to compare-match after (pulse_width - 0.5) ms
+//    - Start timer1
+//  - When timer1 compare-match fires, set the servo pin low
+//
+// This gives us high-precision on the servo pulse width. If we just used timer1
+// to generate the PWM signal directly, we'd waste 0.5 ms worth of our resolution
+// at the start of the cycle (the pulse is *always* at least 0.5ms long)
+//
+// The pins are controlled from SW rather than via the compare-match HW, because
+// the timer lacks an appropriate compare-match mode to prevent a glitch at the
+// 0.5 ms point.
+//
+// With this approach, we can generate pulses between 0.5-2.0 ms, with 8 us precision.
+//
+//     <-- 0.5ms --> <------- OCR1x * 8 us -------->
+//    |`````````````````````````````````````````````|                       |
+// ___|                                             |__________...._________|
+//
+//    ^- timer0 overflow                                                    ^- timer0 overflow
+//                ^- timer0 compare-match           ^- timer1 compare-match
+//                   start timer1
+//
+//     <---------------------- Full cycle, 20 ms or whatever -------------->
 //
 
 #define SERVO_PORT  PORTB
